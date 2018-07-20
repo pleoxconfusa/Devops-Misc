@@ -12,6 +12,9 @@ import getpass
 #setup var for global variables
 connection = None;
 state = "setup";
+cur_switch = "";
+err_count = 0;
+err_limit = 5;
 
 def get_details():
     """
@@ -35,41 +38,51 @@ def get_details():
         switch_names.append(name);
         name = input();
     
-    state = "connect";
+    state = "next";
     
     return switch_names, input("\nUsername:\n"), getpass.getpass("\nPassword:\n");
     
 
 #open connection to switch
-def open_connection(switch_name, username, password):
+def open_connection(username, password):
     """
-    This open_connection method opens and returns a connection to a switch.
+    This open_connection method opens and returns a connection to global cur_switch.
     Args:
-        None.
+        A username string
+        A password string
     Returns:
         A netmiko connection to a switch
     """
+    global connection, state, cur_switch, err_count, err_limit;
     
     switch = {
         'device_type': 'cisco_ios',
-        'ip':   switch_name,
+        'ip':   cur_switch,
         'username': username,
         'password': password,
         'port' : 22,          # optional, defaults to 22
         'secret': '',     # optional, defaults to ''
         'verbose': False,       # optional, defaults to False
     }
-    global state;
     
-        
-    try:
-        connection = ConnectHandler(**switch);
-        state = "init";
-        print('connected.');
-        return connection;
-        
-    except Exception as e: 
-        print(e);
+    
+    if err_count < err_limit:
+        try:
+            connection = ConnectHandler(**switch);
+            state = "init";
+            print('Connected to ' + cur_switch + ".");
+            err_count = 0;
+            return connection;
+            
+        except Exception as e:
+            err_count += 1;
+            print(e);
+    
+    else:
+        print("Could not connect to " + cur_switch + ".");
+        err_count = 0;
+        state = "next";
+        return;
         
         
         
@@ -82,6 +95,7 @@ def issue(command):
     Returns:
         String: command output.
     """
+    global connection;
     return connection.send_command(command);
         
         
@@ -95,6 +109,7 @@ def issue_cft(command):
     Returns:
         String: command output.
     """
+    global connection;
     return connection.send_config_set(command);
 
 
@@ -146,7 +161,15 @@ def determine_exclusion(list):
         
     exclude = input("Enter the list numbers you'd like to exclude, separated by spaces.\n").split();
     
-    return [i for j, i in enumerate(list) if j not in exclude];
+    return_list = [];
+    
+    for i in range(len(list)):
+        if str(i) not in exclude:
+            return_list.append(list[i]);
+            
+    
+    
+    return return_list;
     
 
 
@@ -177,7 +200,7 @@ def controller_update(interfaces):
             #switchport access vlan ###
         for line in run_cfg.splitlines():
             if line[0:24].strip() == "switchport access vlan":
-                vlan_id = line[24:27].strip();        
+                vlan_id = line[24] + "2";   
         
         #issue: int tuple[1]
         #issue: shut
@@ -216,19 +239,42 @@ def controller_end(switches):
     Returns:
         None.
     """
-    global state;
+    global state, cur_switch, connection;
     
     print('end.');    
     connection.disconnect();
+    connection = None;
+    cur_switch = "";
+    
+    state = "next";
+    
+    return;
+
+
+
+
+def next_switch(switches):
+    """
+    Next_switch method pops the switches list into cur_switch.
+    
+    Args:
+        List of switch strings.
+    Returns:
+        Nothing.
+    """
+    
+    global state, cur_switch;
+    
+    
     
     #If we have switches left to connect to, let's do it otherwise end.
     if switches:
+        cur_switch = switches.pop(0);
         state = "connect";
     else:
         state = "";
     
     return;
-
 
 
 # Controller: 
@@ -247,8 +293,11 @@ def controller():
             # setup
             switches, username, password = get_details();
             
+        elif state == "next":
+            next_switch(switches);
+            
         elif state == "connect":
-            connection = open_connection(switches.pop(0), username, password);
+            connection = open_connection(username, password);
         
         elif state == "init":
             # init.
