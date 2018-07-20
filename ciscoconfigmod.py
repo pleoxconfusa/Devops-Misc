@@ -13,11 +13,37 @@ import getpass
 connection = None;
 state = "setup";
 
+def get_details():
+    """
+    get_details gets credentials from the user to begin the process. 
+    this method contains no error checking, so don't mess it up.
+    
+    Args:
+        None.
+    Returns:
+        A list of switch names.
+        A string username.
+        A string password.
+    """
+    global state;
+    
+    switch_names = [];
+    
+    name = input("\nSwitches:\n");
+    
+    while name:
+        switch_names.append(name);
+        name = input();
+    
+    state = "connect";
+    
+    return switch_names, input("\nUsername:\n"), getpass.getpass("\nPassword:\n");
+    
 
 #open connection to switch
-def open_connection():
+def open_connection(switch_name, username, password):
     """
-    This connection opens and returns a connection to a switch.
+    This open_connection method opens and returns a connection to a switch.
     Args:
         None.
     Returns:
@@ -26,9 +52,9 @@ def open_connection():
     
     switch = {
         'device_type': 'cisco_ios',
-        'ip':   input("\nSwitch:\n"),
-        'username': input("\nUsername:\n"),
-        'password': getpass.getpass("\nPassword:\n"),
+        'ip':   switch_name,
+        'username': username,
+        'password': password,
         'port' : 22,          # optional, defaults to 22
         'secret': '',     # optional, defaults to ''
         'verbose': False,       # optional, defaults to False
@@ -50,7 +76,7 @@ def open_connection():
 #issues commands and returns output from inputted command, could be null if nothing is returned.
 def issue(command):
     """
-    This issues commands to connections
+    This issues commands to connections.  This method is easier to type.
     Args:
         String: A command.
     Returns:
@@ -63,7 +89,7 @@ def issue(command):
 #issues commands and returns output from inputted command, could be null if nothing is returned.
 def issue_cft(command):
     """
-    This issues conf t commands to connections
+    This issues conf t commands to connections.  We like this method more.
     Args:
         String: A command.
     Returns:
@@ -105,10 +131,30 @@ def controller_init():
     return interfaces;
 
 
+def determine_exclusion(list):
+    """
+    This method presents the contents of a list then asks for input on which elements to skip.
+    Args:
+        A list.
+    Returns:
+        A list of equal or lesser size.
+    """
+    index = 0;
+    for item in list:
+        print(index, "\t", item);
+        index += 1;
+        
+    exclude = input("Enter the list numbers you'd like to exclude, separated by spaces.\n").split();
+    
+    return [i for j, i in enumerate(list) if j not in exclude];
+    
+
+
 #update interface function: grab tuple 
 def controller_update(interfaces):
     """
-    For each interface, run our commands.
+    For each interface, run the ocmmands specified in the script.
+    This now prompts you to exclude some interfaces.
     Args:
         List: Tuples of description and interface
     Returns:
@@ -116,6 +162,10 @@ def controller_update(interfaces):
     """
     global state;
     print("updating.");
+    
+    #Let's ask which interfaces to skip.
+    interfaces = determine_exclusion(interfaces);
+    
     
     for intf in interfaces:
         print("Modifying:");
@@ -151,17 +201,18 @@ def controller_update(interfaces):
         
         print("\tdone.");
         
+    
     state = "end";
 
     return;
 
 #controller end: issue: end
-def controller_end():
+def controller_end(switches):
     """
     Ends the controller and ends the program.
     
     Args:
-        None.
+        The list of switches
     Returns:
         None.
     """
@@ -169,7 +220,12 @@ def controller_end():
     
     print('end.');    
     connection.disconnect();
-    state = "";
+    
+    #If we have switches left to connect to, let's do it otherwise end.
+    if switches:
+        state = "connect";
+    else:
+        state = "";
     
     return;
 
@@ -189,7 +245,10 @@ def controller():
     while True:
         if state == "setup":
             # setup
-            connection = open_connection();
+            switches, username, password = get_details();
+            
+        elif state == "connect":
+            connection = open_connection(switches.pop(0), username, password);
         
         elif state == "init":
             # init.
@@ -201,7 +260,7 @@ def controller():
             
         elif state == "end":
             # call end
-            controller_end();
+            controller_end(switches);
         
         else:
             break;
